@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iready.com</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      color: white;
+      margin-bottom: 60px;
+    }
+    h1 {
+      font-size: 48px;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    .subtitle {
+      font-size: 18px;
+      opacity: 0.95;
+    }
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+    .game-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+    }
+    .game-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+    }
+    .game-card a {
+      text-decoration: none;
+      color: inherit;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .game-thumbnail {
+      width: 100%;
+      height: 180px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 48px;
+    }
+    .game-info {
+      padding: 20px;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .game-title {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    .game-description {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 15px;
+      line-height: 1.5;
+    }
+    .game-badge {
+      display: inline-block;
+      background: #667eea;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      width: fit-content;
+    }
+    .play-button {
+      margin-top: 15px;
+      padding: 12px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    .play-button:hover {
+      background: #764ba2;
+    }
+    footer {
+      text-align: center;
+      color: white;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎮 Game Hub</h1>
+      <p class="subtitle">Scrumptious studios >:D</p>
+    </header>
+
+    <div class="games-grid">
+      <!-- Dodge Game -->
+      <div class="game-card">
+        <a href="Iready.com.html">
+          <div class="game-thumbnail">
+            🚀
+          </div>
+          <div class="game-info">
+            <div>
+              <div class="game-title">Dodge Game</div>
+              <p class="game-description">Test your aura! Avoid falling caseohs and get the highest score. Has multiple difficulty levels.</p>
+              <span class="game-badge">Arcade</span>
+            </div>
+            <button class="play-button">Play Now</button>
+          </div>
+        </a>
+      </div>
+
+      <!-- Flappy Bird -->
+      <div class="game-card">
+        <a href="flappybird.html">
+          <div class="game-thumbnail">
+            🐦
+          </div>
+          <div class="game-info">
+            <div>
+              <div class="game-title">Flappy Bird</div>
+              <p class="game-description">Tap to flap and navigate through the pipes. Simple game, hard gameplay!</p>
+              <span class="game-badge">Classic</span>
+            </div>
+            <button class="play-button">Play Now</button>
+          </div>
+        </a>
+      </div>
+
+      <!-- Item RNG -->
+      <div class="game-card">
+        <a href="Itemrng.html">
+          <div class="game-thumbnail">
+            🎲
+          </div>
+          <div class="game-info">
+            <div>
+              <div class="game-title">Item RNG</div>
+              <p class="game-description">Roll for items and try to collect all!</p>
+              <span class="game-badge">Luck</span>
+            </div>
+            <button class="play-button">Play Now</button>
+          </div>
+        </a>
+      </div>
+
+      <!-- Extra Game Slots (ready for more games) -->
+      <div class="game-card" style="opacity: 0.6;">
+        <div class="game-thumbnail">❓</div>
+        <div class="game-info">
+          <div>
+            <div class="game-title">Coming Soon</div>
+            <p class="game-description">I make more game :D</p>
+          </div>
+          <button class="play-button" disabled style="opacity: 0.6; cursor: not-allowed;"></button>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <p> Scrumptious studios >:D.</p>
+    </footer>
+  </div>
+</body>
+</html>

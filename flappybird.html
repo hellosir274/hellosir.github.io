@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Iready.com</title>
+  <style>
+    body { margin:0; padding:20px; background:#222; font-family:sans-serif; display:flex; align-items:center; justify-content:center; gap:40px; min-height:100vh; }
+    .side-text { color:#fff; font-size:24px; font-weight:bold; max-width:200px; text-align:left; }
+    .side-link { color:#fff; font-size:20px; font-weight:bold; max-width:200px; text-align:center; }
+    .side-link a { color:#ff9500; text-decoration:none; }
+    .side-link a:hover { text-decoration:underline; }
+    .game-wrapper { display:flex; align-items:center; }
+    .game-container { position:relative; width:500px; height:700px; background:linear-gradient(180deg, #87ceeb 0%, #e0f6ff 100%); border:3px solid #444; box-shadow:0 0 20px rgba(0,0,0,0.8); overflow:hidden; }
+    canvas { display:block; }
+    .hud { position:absolute; top:15px; left:15px; color:#333; font-size:20px; font-weight:bold; z-index:10; }
+    .fs-btn { position:absolute; right:8px; top:8px; background:rgba(0,0,0,0.6); color:#fff; border:none; padding:6px 8px; cursor:pointer; font-size:14px; border-radius:4px; z-index:15; }
+    .start-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.8); z-index:30; }
+    .start-card { text-align:center; background:rgba(255,255,255,0.95); padding:30px; border-radius:10px; color:#333; }
+    .start-card h2 { margin:0 0 20px 0; font-size:36px; }
+    .start-card p { margin:10px 0; font-size:14px; }
+    .start-btn { background:#ff9500; color:#fff; border:none; padding:12px 24px; font-size:16px; border-radius:6px; cursor:pointer; font-weight:bold; margin-top:20px; }
+    .start-btn:hover { background:#ff8800; }
+  </style>
+</head>
+<body>
+  <div class="side-text">Scrumptious studios >:D</div>
+  <div class="game-wrapper">
+    <div class="game-container" id="game-spot">
+      <button class="fs-btn" title="Toggle fullscreen (F)">⤢</button>
+    </div>
+  </div>
+  <div class="side-link"><a href="Game%20hob.html">← Back to Game Hub</a></div>
+
+  <script>
+  function initGame(containerId) {
+    const container = document.getElementById(containerId);
+    container.style.position = 'relative';
+    const canvas = document.createElement('canvas');
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    
+    const hud = document.createElement('div');
+    hud.className = 'hud';
+    container.appendChild(hud);
+
+    const fsBtn = container.querySelector('.fs-btn');
+    function toggleFullscreen() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        container.requestFullscreen().catch(() => {});
+      }
+    }
+    fsBtn.addEventListener('click', toggleFullscreen);
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'f') toggleFullscreen();
+    });
+
+    // Game state
+    let running = true;
+    let score = 0;
+    let gameOverHandled = false;
+    const bird = { x: 60, y: canvas.height / 2, w: 34, h: 24, vy: 0 };
+    const keys = {};
+    let lastTime = performance.now();
+    const pipes = [];
+    let pipeTimer = 0;
+    const gravity = 0.5;
+    const jumpPower = -6.5;
+    const pipeGap = 160;
+    const pipeWidth = 52;
+    const pipeSpacing = 300;
+
+    function onKey(e) {
+      keys[e.key.toLowerCase()] = e.type === 'keydown';
+      if ((e.key === ' ' || e.key.toLowerCase() === 'w') && running) {
+        bird.vy = jumpPower;
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+
+    // Mouse click to jump
+    canvas.addEventListener('click', () => {
+      if (running) {
+        bird.vy = jumpPower;
+      }
+    });
+
+    function spawnPipe() {
+      const minHeight = 50;
+      const maxHeight = canvas.height - pipeGap - 50;
+      const topHeight = minHeight + Math.random() * (maxHeight - minHeight);
+      pipes.push({
+        x: canvas.width,
+        topHeight: topHeight,
+        bottomHeight: canvas.height - topHeight - pipeGap,
+        scored: false
+      });
+    }
+
+    function checkCollision(bird, pipe) {
+      // Left and right bounds
+      if (bird.x + bird.w < pipe.x || bird.x > pipe.x + pipeWidth) {
+        return false;
+      }
+      // Top pipe collision
+      if (bird.y < pipe.topHeight) {
+        return true;
+      }
+      // Bottom pipe collision
+      if (bird.y + bird.h > canvas.height - pipe.bottomHeight) {
+        return true;
+      }
+      return false;
+    }
+
+    function update(dt) {
+      if (!running) return;
+
+      // Physics
+      bird.vy += gravity;
+      bird.y += bird.vy;
+
+      // Bounds
+      if (bird.y + bird.h > canvas.height) {
+        running = false;
+      }
+      if (bird.y < 0) {
+        running = false;
+      }
+
+      // Spawn pipes
+      pipeTimer += dt;
+      if (pipeTimer >= pipeSpacing / 150) {
+        pipeTimer = 0;
+        spawnPipe();
+      }
+
+      // Update pipes and check collisions
+      for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= 150 * dt;
+
+        // Score when passing a pipe
+        if (!pipes[i].scored && pipes[i].x + pipeWidth < bird.x) {
+          pipes[i].scored = true;
+          score += 1;
+        }
+
+        // Remove off-screen pipes
+        if (pipes[i].x + pipeWidth < 0) {
+          pipes.splice(i, 1);
+        } else if (checkCollision(bird, pipes[i])) {
+          running = false;
+        }
+      }
+
+      // Game over
+      if (!running && !gameOverHandled) {
+        gameOverHandled = true;
+        const s = Math.floor(score);
+        const hs = getHighScore();
+        if (s > hs) {
+          updateHighScore(s);
+          hud.textContent = `NEW HIGH SCORE! — Score: ${s} — Press R to restart`;
+        } else {
+          hud.textContent = `GAME OVER — Score: ${s} — Press R to restart`;
+        }
+      }
+    }
+
+    function draw() {
+      // Sky gradient
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, '#87ceeb');
+      gradient.addColorStop(1, '#e0f6ff');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw pipes
+      ctx.fillStyle = '#2ecc71';
+      pipes.forEach((pipe) => {
+        // Top pipe
+        ctx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
+        // Bottom pipe
+        ctx.fillRect(pipe.x, canvas.height - pipe.bottomHeight, pipeWidth, pipe.bottomHeight);
+        // Pipe caps
+        ctx.fillStyle = '#27ae60';
+        ctx.fillRect(pipe.x - 4, pipe.topHeight - 8, pipeWidth + 8, 8);
+        ctx.fillRect(pipe.x - 4, canvas.height - pipe.bottomHeight, pipeWidth + 8, 8);
+        ctx.fillStyle = '#2ecc71';
+      });
+
+      // Draw bird (yellow circle facing right)
+      ctx.fillStyle = '#ffeb3b';
+      ctx.beginPath();
+      ctx.arc(bird.x + bird.w / 2, bird.y + bird.h / 2, bird.w / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bird left eye
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(bird.x + bird.w / 2 - 8, bird.y + bird.h / 2 - 4, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(bird.x + bird.w / 2 - 8, bird.y + bird.h / 2 - 4, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bird beak (right side)
+      ctx.fillStyle = '#ff9500';
+      ctx.beginPath();
+      ctx.moveTo(bird.x + bird.w / 2 + 12, bird.y + bird.h / 2);
+      ctx.lineTo(bird.x + bird.w / 2 + 18, bird.y + bird.h / 2 - 3);
+      ctx.lineTo(bird.x + bird.w / 2 + 18, bird.y + bird.h / 2 + 3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Draw score
+      if (running) {
+        hud.textContent = `Score: ${score}`;
+      }
+    }
+
+    function loop(now) {
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      update(dt);
+      draw();
+      requestId = requestAnimationFrame(loop);
+    }
+
+    function restart() {
+      running = true;
+      score = 0;
+      bird.y = canvas.height / 2;
+      bird.vy = 0;
+      pipes.length = 0;
+      pipeTimer = 0;
+      gameOverHandled = false;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (!running && e.key.toLowerCase() === 'r') restart();
+    });
+
+    let requestId = requestAnimationFrame(loop);
+
+    return {
+      destroy() {
+        cancelAnimationFrame(requestId);
+        window.removeEventListener('keydown', onKey);
+        window.removeEventListener('keyup', onKey);
+        container.innerHTML = '';
+      }
+    };
+  }
+
+  // High score storage
+  function getHighScore() {
+    try {
+      return parseInt(localStorage.getItem('flappybird_highscore') || '0', 10);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function updateHighScore(score) {
+    try {
+      const current = getHighScore();
+      if (score > current) {
+        localStorage.setItem('flappybird_highscore', String(score));
+      }
+    } catch (e) {}
+  }
+
+  // Start screen
+  document.addEventListener('DOMContentLoaded', () => {
+    const spot = document.getElementById('game-spot');
+    const overlay = document.createElement('div');
+    overlay.className = 'start-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'start-card';
+
+    const title = document.createElement('h2');
+    title.textContent = '🐦 Flappy Bird';
+    card.appendChild(title);
+
+    const desc = document.createElement('p');
+    desc.textContent = 'Tap to flap and avoid the pipes!';
+    card.appendChild(desc);
+
+    const controls = document.createElement('p');
+    controls.textContent = 'Space/W or Click to flap | F for fullscreen | R to restart';
+    controls.style.fontSize = '12px';
+    card.appendChild(controls);
+
+    const hsDisplay = document.createElement('p');
+    hsDisplay.style.fontSize = '18px';
+    hsDisplay.style.marginBottom = '20px';
+    const hs = getHighScore();
+    hsDisplay.textContent = `High Score: ${hs}`;
+    card.appendChild(hsDisplay);
+
+    const startBtn = document.createElement('button');
+    startBtn.className = 'start-btn';
+    startBtn.textContent = 'START GAME';
+    startBtn.addEventListener('click', () => {
+      overlay.remove();
+      initGame('game-spot');
+    });
+    card.appendChild(startBtn);
+
+    overlay.appendChild(card);
+    spot.appendChild(overlay);
+  });
+  </script>
+</body>
+</html>

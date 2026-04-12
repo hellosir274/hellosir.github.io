@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Iready.com</title>
+  <style>
+    body { background: url('./col.webp') center/cover no-repeat; margin:0; font-family: sans-serif; }
+    .page { padding:18px; }
+    .game-container { width:720px; height:480px; border:2px solid #333; display:inline-block; position:relative; }
+    .fs-btn { position:absolute; right:8px; top:8px; background:rgba(0,0,0,0.6); color:#fff; border:none; padding:6px 8px; cursor:pointer; font-size:14px; border-radius:4px; }
+    canvas { display:block; background:#f0f0f0; }
+    .overlay { font:12px/1 sans-serif; position:absolute; left:6px; top:6px; color:#222; }
+
+    /* Start overlay UI */
+    .start-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:30; }
+    .start-card { text-align:center; background:rgba(255,255,255,0.06); padding:18px; border-radius:10px; backdrop-filter:blur(4px); color:#fff; width:360px; }
+    .start-card .title { font-size:18px; margin-bottom:10px; }
+    .difficulty-group button { margin:6px; padding:8px 12px; border-radius:6px; border:none; cursor:pointer; }
+    .start-btn { background:#1e88e5; color:#fff; border:none; padding:12px 20px; font-size:18px; border-radius:8px; cursor:pointer; min-width:120px; }
+    .cooldown { color:#ffd; font-size:13px; margin-bottom:8px; }
+    .leaderboard { color:#fff; font-size:13px; margin:8px 0 10px 0; text-align:left; }
+    .leaderboard-item { display:flex; justify-content:space-between; padding:2px 0; }
+    .back-link { position:fixed; bottom:20px; right:20px; }
+    .back-link a { color:#fff; text-decoration:none; font-size:16px; font-weight:bold; background:rgba(0,0,0,0.6); padding:10px 15px; border-radius:4px; }
+    .back-link a:hover { background:rgba(0,0,0,0.8); }
+  </style>
+</head>
+<body>
+  <div class="back-link"><a href="Game%20hob.html">← Back to Hub</a></div>
+  <div class="page">
+    <h1><b>Scrumptious studios >:D</b></h1>
+    <div id="game-spot" class="game-container"></div>
+  </div>
+
+  <script>
+  /* --- Configuration --- */
+  // Paste your server URL here to enable worldwide leaderboard, e.g. 'https://example.com'
+  const API_BASE = '';
+
+  /* --- Local high scores (per difficulty) --- */
+  function getHighScores() {
+    try { return JSON.parse(localStorage.getItem('gogle_game_highscores') || '{}'); } catch (e) { return {}; }
+  }
+  function updateHighScore(level, score) {
+    const hs = getHighScores();
+    const prev = hs[level] || 0;
+    if (score > prev) { hs[level] = score; try { localStorage.setItem('gogle_game_highscores', JSON.stringify(hs)); } catch(e){} return { updated:true, previous:prev }; }
+    return { updated:false, previous:prev };
+  }
+
+  /* --- REST client for worldwide leaderboard (Option C) --- */
+  async function fetchGlobalLeaderboard(level, limit=10) {
+    if (!API_BASE) return [];
+    try {
+      const r = await fetch(`${API_BASE}/leaderboard?level=${encodeURIComponent(level)}&limit=${limit}`);
+      if (!r.ok) throw new Error('bad');
+      return await r.json();
+    } catch(e){ return []; }
+  }
+
+  // client-side submit with simple rate-limit (one submit per level per 30s stored in sessionStorage)
+  async function submitGlobalScore(name, level, score) {
+    if (!API_BASE) return { ok:false, error:'no_api' };
+    const key = `gogle_last_submit_${level}`;
+    const last = parseInt(sessionStorage.getItem(key) || '0',10);
+    const now = Date.now(); const minGap = 30*1000;
+    if (last && now-last < minGap) return { ok:false, error:'rate_limited', retryAfter:Math.ceil((minGap-(now-last))/1000) };
+    try {
+      const res = await fetch(`${API_BASE}/submit`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name: String(name).slice(0,30), level, score: Math.floor(score) }) });
+      const json = await res.json();
+      if (json && json.ok) { try { sessionStorage.setItem(key, String(now)); } catch(e){} }
+      return json;
+    } catch(e){ return { ok:false, error:e.message }; }
+  }
+
+  /* --- Game implementation (same as before, with difficulty scaling) --- */
+  function initGame(containerId, options) {
+    const container = document.getElementById(containerId); if (!container) throw new Error('no container');
+    container.style.position = 'relative';
+    const canvas = document.createElement('canvas'); canvas.width = container.clientWidth; canvas.height = container.clientHeight; container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const hud = document.createElement('div'); hud.className='overlay'; container.appendChild(hud);
+
+    const fsBtn = document.createElement('button'); fsBtn.className='fs-btn'; fsBtn.title='Toggle fullscreen (F)'; fsBtn.innerText='⤢'; container.appendChild(fsBtn);
+    function toggleFullscreen(){ if (document.fullscreenElement) document.exitFullscreen(); else container.requestFullscreen().catch(()=>{}); }
+    fsBtn.addEventListener('click', toggleFullscreen); window.addEventListener('keydown', e=>{ if (e.key.toLowerCase()==='f') toggleFullscreen(); });
+
+    const presets = { easy:{spawnBase:1.15,speedFactor:0.9}, medium:{spawnBase:1.0,speedFactor:1.0}, hard:{spawnBase:0.8,speedFactor:1.4}, impossible:{spawnBase:0.55,speedFactor:2.2} };
+    const level = (options && options.level) || 'medium'; const preset = presets[level] || presets.medium;
+    let spawnIntervalBase = 0.9 * preset.spawnBase; const speedFactorPreset = preset.speedFactor; const difficultySpeedCap = 6;
+
+    let running=true, score=0, gameOverHandled=false; const player = { x: canvas.width/2-15, y: canvas.height-30, w:30, h:12, speed:200 };
+    const keys = {}, enemies=[]; let lastTime = performance.now(), spawnTimer = 0;
+
+    function onKey(e){ keys[e.key.toLowerCase()] = e.type==='keydown'; }
+    window.addEventListener('keydown', onKey); window.addEventListener('keyup', onKey);
+
+    const ro = new ResizeObserver(()=>{ canvas.width = container.clientWidth; canvas.height = container.clientHeight; player.y = canvas.height-30; }); ro.observe(container);
+
+    function spawnEnemy(d){ const size = 12 + Math.random()*18; const baseVy = 60 + Math.random()*160; enemies.push({ x: Math.random()*(canvas.width-size), y:-size, w:size, h:size, vy: baseVy * d }); }
+    function rectsCollide(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+    function update(dt){ if (!running) return; let dir=0; if (keys['arrowleft']||keys['a']) dir--; if (keys['arrowright']||keys['d']) dir++; player.x += dir*player.speed*dt; player.x = Math.max(0, Math.min(player.x, canvas.width - player.w));
+      const difficulty = Math.min(difficultySpeedCap, (1 + score/200) * speedFactorPreset);
+      const currentSpawnInterval = Math.max(0.25, spawnIntervalBase / difficulty);
+      spawnTimer += dt; if (spawnTimer >= currentSpawnInterval) { spawnTimer = 0; spawnEnemy(difficulty); }
+      for (let i=enemies.length-1;i>=0;i--){ const en = enemies[i]; en.y += en.vy * dt; if (en.y > canvas.height) enemies.splice(i,1); else if (rectsCollide(en, player)) { if (running) running=false; } }
+      score += dt*10;
+      if (!running && !gameOverHandled){ gameOverHandled = true; const s = Math.floor(score); const res = updateHighScore(level, s); if (res.updated) hud.textContent = 'NEW HIGH SCORE! — Score: ' + s + ' — Press R to restart'; }
+    }
+
+    function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#1e88e5'; ctx.fillRect(player.x, player.y, player.w, player.h); ctx.fillStyle='#e53935'; enemies.forEach(en => ctx.fillRect(en.x, en.y, en.w, en.h)); hud.textContent = running ? 'Score: ' + Math.floor(score) : 'GAME OVER — Score: ' + Math.floor(score) + ' — Press R to restart'; }
+
+    function loop(now){ const dt = Math.min(0.05, (now - lastTime)/1000); lastTime = now; update(dt); draw(); requestId = requestAnimationFrame(loop); }
+    function restart(){ running=true; score=0; enemies.length=0; player.x = canvas.width/2-15; spawnTimer=0; gameOverHandled=false; }
+    window.addEventListener('keydown', (e)=>{ if (!running && e.key.toLowerCase()==='r') restart(); });
+    let requestId = requestAnimationFrame(loop);
+    return { destroy(){ cancelAnimationFrame(requestId); ro.disconnect(); window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey); container.innerHTML=''; } };
+  }
+
+  /* --- Start overlay, difficulty selector, leaderboard, and cooldown UI --- */
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const spot = document.getElementById('game-spot');
+    const overlay = document.createElement('div'); overlay.className='start-overlay';
+    const card = document.createElement('div'); card.className='start-card';
+    const title = document.createElement('div'); title.className='title'; title.textContent = 'Choose Difficulty'; card.appendChild(title);
+
+    const hsDisplay = document.createElement('div'); hsDisplay.style.marginBottom='6px'; card.appendChild(hsDisplay);
+    const cooldownDisplay = document.createElement('div'); cooldownDisplay.className='cooldown'; cooldownDisplay.textContent=''; card.appendChild(cooldownDisplay);
+
+    const levels = ['easy','medium','hard','impossible']; let selected = 'medium';
+    const diffGroup = document.createElement('div'); diffGroup.className='difficulty-group'; card.appendChild(diffGroup);
+    levels.forEach(l => { const b = document.createElement('button'); b.textContent = l[0].toUpperCase()+l.slice(1); b.dataset.level = l; if (l===selected) b.style.boxShadow='0 0 0 2px rgba(30,136,229,0.4)'; b.addEventListener('click', ()=>{ selected = l; Array.from(diffGroup.children).forEach(ch=>ch.style.boxShadow=''); b.style.boxShadow='0 0 0 2px rgba(30,136,229,0.4)'; updateHS(); refreshLeaderboard(); updateCooldown(); }); diffGroup.appendChild(b); });
+
+    const instr = document.createElement('div'); instr.style.margin='12px 0'; instr.textContent = 'Easy = Normal. Medium = a little harder. Hard = hard. Impossible = really hard.'; card.appendChild(instr);
+
+    const leaderboard = document.createElement('div'); leaderboard.className='leaderboard'; card.appendChild(leaderboard);
+
+    const startBtn = document.createElement('button'); startBtn.className='start-btn'; startBtn.textContent='Start'; startBtn.addEventListener('click', ()=>{ overlay.remove(); if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer=null; } initGame('game-spot', { level: selected }); }); card.appendChild(startBtn);
+
+    overlay.appendChild(card); spot.appendChild(overlay);
+
+    function updateHS(){ const hs = getHighScores(); hsDisplay.textContent = `High score (${selected[0].toUpperCase()+selected.slice(1)}): ${hs[selected]||0}`; }
+    async function refreshLeaderboard(){ leaderboard.innerHTML=''; if (!API_BASE){ const hs = getHighScores(); levels.forEach(lv=>{ const row=document.createElement('div'); row.className='leaderboard-item'; const a=document.createElement('div'); a.textContent = lv[0].toUpperCase()+lv.slice(1); const b=document.createElement('div'); b.textContent = hs[lv]||0; row.appendChild(a); row.appendChild(b); leaderboard.appendChild(row); }); return; }
+      // fetch top 3 per level
+      const jobs = levels.map(lv => fetchGlobalLeaderboard(lv, 3).then(r=>({lv,data:r})).catch(()=>({lv,data:[]})));
+      const results = await Promise.all(jobs);
+      results.forEach(r=>{ const row=document.createElement('div'); row.className='leaderboard-item'; const a=document.createElement('div'); a.textContent = r.lv[0].toUpperCase()+r.lv.slice(1); const b=document.createElement('div'); b.textContent = r.data && r.data.length ? `${r.data[0].score} — ${r.data[0].name}` : '—'; row.appendChild(a); row.appendChild(b); leaderboard.appendChild(row); });
+    }
+
+    // cooldown display (uses sessionStorage key per level)
+    function updateCooldown(){ const key = `gogle_last_submit_${selected}`; const last = parseInt(sessionStorage.getItem(key)||'0',10); const now = Date.now(); const minGap=30*1000; if (!last || now-last>=minGap) { cooldownDisplay.textContent=''; } else { cooldownDisplay.textContent = `Submit cooldown: ${Math.ceil((minGap-(now-last))/1000)}s`; } }
+    let cooldownTimer = setInterval(updateCooldown, 1000);
+
+    // initial populate
+    updateHS(); refreshLeaderboard(); updateCooldown();
+  });
+
+
+
+  // helpers to refresh start overlay leaderboard (if present)
+  async function refreshAllStartLeaderboards(){ const overlay = document.querySelector('.start-overlay'); if (!overlay) return; const leaderboard = overlay.querySelector('.leaderboard'); if (!leaderboard) return; const levels = ['easy','medium','hard','impossible']; leaderboard.innerHTML=''; if (!API_BASE){ const hs = getHighScores(); levels.forEach(lv=>{ const row=document.createElement('div'); row.className='leaderboard-item'; const a=document.createElement('div'); a.textContent = lv[0].toUpperCase()+lv.slice(1); const b=document.createElement('div'); b.textContent = hs[lv]||0; row.appendChild(a); row.appendChild(b); leaderboard.appendChild(row); }); return; } const jobs = levels.map(lv => fetchGlobalLeaderboard(lv,3).then(r=>({lv,data:r})).catch(()=>({lv,data:[]}))); const results = await Promise.all(jobs); results.forEach(r=>{ const row=document.createElement('div'); row.className='leaderboard-item'; const a=document.createElement('div'); a.textContent = r.lv[0].toUpperCase()+r.lv.slice(1); const b=document.createElement('div'); b.textContent = r.data && r.data.length ? `${r.data[0].score} — ${r.data[0].name}` : '—'; row.appendChild(a); row.appendChild(b); leaderboard.appendChild(row); }); }
+
+  function updateCooldownForLevel(level){ try{ sessionStorage.setItem(`gogle_last_submit_${level}`, String(Date.now())); }catch(e){} }
+
+  </script>
+</body>
+</html>
+
+
