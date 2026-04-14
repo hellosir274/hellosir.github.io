@@ -152,6 +152,9 @@
     Enter a username before trading
   </div>
 
+  <!-- Debug log (temporary) -->
+  <div id="debug-log" style="position:fixed; left:12px; bottom:52px; color:#fff; background:rgba(0,0,0,0.4); padding:6px 8px; border-radius:6px; font-size:12px; z-index:2000; max-width:320px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+
   <!-- Receive trades area (above back to hub) -->
   <div id="receive-trades" style="position:fixed; right:12px; bottom:80px; width:280px; background:rgba(0,0,0,0.6); border:1px solid #6600cc; border-radius:10px; padding:10px; color:#fff; z-index:2000;">
     <div style="font-weight:bold; margin-bottom:8px;">Received Trades</div>
@@ -505,6 +508,16 @@
 
   function getCurrentUsername() { return localStorage.getItem('rng_username') || null; }
 
+  // Temporary debug helper (visible and logs to console)
+  function debug(msg) {
+    try { console.log('[DEBUG]', msg); } catch(e){}
+    const el = document.getElementById('debug-log');
+    if (!el) return;
+    el.textContent = msg;
+    if (debug._t) clearTimeout(debug._t);
+    debug._t = setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 6000);
+  }
+
   function setUsername(name) {
     // once set, permanent
     if (getCurrentUsername()) return false;
@@ -514,6 +527,7 @@
     localStorage.setItem('rng_username', name);
     // record the time of initial username creation so subsequent changes are rate-limited
     localStorage.setItem('rng_username_changed_at', String(Date.now()));
+    debug('setUsername: ' + name);
     showUsername();
     ensureAdminPanel();
     return true;
@@ -599,6 +613,7 @@
         // sync users
         const updated = loadUsers().filter(u => u !== old); updated.push(newName); saveUsers(updated);
         showUsername();
+        debug('attemptChangeUsername: changed to ' + newName);
         alert('Username changed to ' + newName);
         return;
       } catch (e) { console.log(e); alert('Server error changing username'); }
@@ -608,6 +623,7 @@
     if (!canChangeLocal()) {
       const last = parseInt(localStorage.getItem('rng_username_changed_at') || '0', 10);
       const wait = Math.ceil((7*24*60*60*1000 - (Date.now()-last)) / (1000*60*60));
+      debug('attemptChangeUsername: blocked by cooldown');
       return alert(`You can change username in ~${wait} hours`);
     }
 
@@ -616,6 +632,7 @@
     localStorage.setItem('rng_username_changed_at', String(Date.now()));
     const updated = loadUsers().filter(u => u !== old); updated.push(newName); saveUsers(updated);
     showUsername();
+    debug('attemptChangeUsername: changed locally to ' + newName);
     alert('Username changed locally to ' + newName);
   }
 
