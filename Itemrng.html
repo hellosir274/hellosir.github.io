@@ -126,7 +126,7 @@
     </div>
 
     <div class="trade-section" style="text-align:center; margin-bottom:10px;">
-      <button class="trade-btn" id="trade-btn">Trade Items</button> 
+        <button class="trade-btn" id="trade-btn">Trade Items</button> 
     </div>
     
     <div class="pull-display" id="pull-display">
@@ -146,6 +146,55 @@
   </div>
   
   <div class="back-link"><a href="Game%20hob.html">← back to hub</a></div>
+
+  <!-- Username display -->
+  <div id="username-display" style="position:fixed; left:12px; bottom:12px; color:#fff; background:rgba(0,0,0,0.6); padding:8px 12px; border-radius:8px; border:1px solid #6600cc; font-weight:bold; z-index:2000;">
+    Enter a username before trading
+  </div>
+
+  <!-- Receive trades area (above back to hub) -->
+  <div id="receive-trades" style="position:fixed; right:12px; bottom:80px; width:280px; background:rgba(0,0,0,0.6); border:1px solid #6600cc; border-radius:10px; padding:10px; color:#fff; z-index:2000;">
+    <div style="font-weight:bold; margin-bottom:8px;">Received Trades</div>
+    <div id="received-list" style="max-height:220px; overflow:auto; color:#ddd; font-size:14px;">No trades yet.</div>
+  </div>
+
+  <!-- Trade modal -->
+  <div class="modal" id="trade-modal">
+    <div class="modal-content">
+      <button class="modal-close" id="close-trade-modal">✕</button>
+      <div class="modal-header">Trade Items</div>
+      <div style="margin-bottom:12px; color:#ccc;">Search for a username to trade with:</div>
+      <input id="trade-search" placeholder="Search username..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #6600cc; margin-bottom:12px; background:rgba(0,0,0,0.4); color:#fff;">
+      <div id="user-search-results" style="max-height:300px; overflow:auto; color:#fff;"></div>
+      <div style="margin-top:12px; color:#aaa; font-size:13px;">Select a user to start a trade. You must have a username set.</div>
+    </div>
+  </div>
+
+  <!-- Tutorial modal (force on new users) -->
+  <div class="modal" id="tutorial-modal">
+    <div class="modal-content">
+      <div class="modal-header">Welcome to Item RNG — Tutorial</div>
+      <div style="color:#ddd; margin-bottom:12px;">You must pick a permanent username to play. This cannot be changed later.</div>
+      <ol style="color:#ccc; margin-bottom:12px;">
+        <li>Choose a unique username.</li>
+        <li>Pull items and they'll be stored in your inventory (max 25 per item).</li>
+        <li>Use Trade to search other users and offer items.</li>
+      </ol>
+      <div style="margin-bottom:10px;"><input id="tutorial-username" placeholder="Pick a username" style="width:100%; padding:10px; border-radius:8px; border:1px solid #6600cc; background:rgba(0,0,0,0.4); color:#fff;"></div>
+      <div id="tutorial-error" style="color:#ff6666; margin-bottom:8px;"></div>
+      <button class="collection-btn" id="tutorial-submit">Create Username</button>
+    </div>
+  </div>
+
+  <!-- Admin panel placeholder (visible to admins) -->
+  <div id="admin-panel" style="position:fixed; left:12px; bottom:60px; z-index:2000; display:none;">
+    <div style="background:rgba(0,0,0,0.6); border:1px solid #6600cc; padding:8px; border-radius:8px; color:#fff;">
+      <div style="font-weight:bold; margin-bottom:6px;">Admin Commands</div>
+      <button class="collection-btn" id="admin-give-item" style="padding:8px 12px; font-size:14px;">Give Item</button>
+      <button class="collection-btn" id="admin-boost" style="padding:8px 12px; font-size:14px; margin-top:6px;">Increase Drop %</button>
+    </div>
+  </div>
+
 </body>
 
   <script>
@@ -257,8 +306,13 @@
         const chance = ((rarityWeight / 100) / itemsInRarity);
         const chancePercent = (chance * 100).toFixed(2);
         
-        const collected = collectedAuras.has(itemIndex) ? '✓ Collected' : '—';
-        const collectedClass = collectedAuras.has(itemIndex) ? 'aura-collected' : '';
+        // show how many the current user has of this item
+        const invAll = loadInventories();
+        const currentUser = getCurrentUsername();
+        const userInv = invAll[currentUser] || {};
+        const count = userInv[itemIndex] || 0;
+        const collected = count > 0 ? `${count}` : '0';
+        const collectedClass = count > 0 ? 'aura-collected' : '';
         
         const emoji = isUnlockedSecret ? '❓' : item.emoji;
         const name = isUnlockedSecret ? '???' : item.name;
@@ -369,27 +423,157 @@
     }
   }
 
+  // Inventory & username management (persistent in localStorage)
+  const MAX_PER_ITEM = 25;
+  const API_BASE = 'http://localhost:3000';
+  let USE_BACKEND = false;
+
+  async function initBackend() {
+    try {
+      const resp = await fetch(API_BASE + '/users', { method: 'GET' , cache: 'no-store'});
+      if (!resp.ok) throw new Error('no');
+      const data = await resp.json();
+      // sync server users to localStorage
+      localStorage.setItem('rng_users', JSON.stringify(data.users || []));
+      // try fetching inventories
+      const invResp = await fetch(API_BASE + '/inventories/' + (localStorage.getItem('rng_username')||''));
+      if (invResp.ok) {
+        const invData = await invResp.json();
+        if (invData.inventory) localStorage.setItem('rng_inventories', JSON.stringify({ [localStorage.getItem('rng_username')]: invData.inventory }));
+      }
+      USE_BACKEND = true;
+      console.log('Backend available, using server at', API_BASE);
+    } catch (e) {
+      USE_BACKEND = false;
+      console.log('Backend not available, falling back to localStorage');
+    }
+  }
+
+  function loadUsers() {
+    const raw = localStorage.getItem('rng_users');
+    let arr = raw ? JSON.parse(raw) : [];
+    // ensure admin users exist locally
+    ['mangwar','mangwar67'].forEach(a => { if (!arr.includes(a)) arr.push(a); });
+    localStorage.setItem('rng_users', JSON.stringify(arr));
+    return arr;
+  }
+
+  function saveUsers(users) { localStorage.setItem('rng_users', JSON.stringify(users)); }
+
+  function loadInventories() {
+    const raw = localStorage.getItem('rng_inventories');
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveInventories(inv) { localStorage.setItem('rng_inventories', JSON.stringify(inv)); }
+
+  function getInventoryFor(user) {
+    const inv = loadInventories();
+    if (!inv[user]) inv[user] = {};
+    return inv;
+  }
+
+  function addItemToUser(user, itemIndex, amount = 1) {
+    const inv = getInventoryFor(user);
+    const key = String(itemIndex);
+    inv[user] = inv[user] || {};
+    const current = (inv[user][key] || 0);
+    const allowed = Math.min(MAX_PER_ITEM - current, amount);
+    inv[user][key] = current + allowed;
+    const all = loadInventories(); all[user] = inv[user]; saveInventories(all);
+
+    // If backend available, sync inventory for this user
+    if (USE_BACKEND) {
+      // fetch current server inventory, update key, PUT
+      (async () => {
+        try {
+          const r = await fetch(API_BASE + '/inventories/' + encodeURIComponent(user));
+          if (!r.ok) throw new Error('no-inv');
+          const data = await r.json();
+          const serverInv = data.inventory || {};
+          const sCur = parseInt(serverInv[key] || 0, 10);
+          const sAllowed = Math.min(MAX_PER_ITEM - sCur, allowed);
+          serverInv[key] = sCur + sAllowed;
+          await fetch(API_BASE + '/inventories/' + encodeURIComponent(user), {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inventory: serverInv })
+          });
+        } catch (e) { console.log('failed sync inventory', e); }
+      })();
+    }
+
+    return allowed;
+  }
+
+  function getCurrentUsername() { return localStorage.getItem('rng_username') || null; }
+
+  function setUsername(name) {
+    // once set, permanent
+    if (getCurrentUsername()) return false;
+    const users = loadUsers();
+    if (users.includes(name)) return false;
+    users.push(name); saveUsers(users);
+    localStorage.setItem('rng_username', name);
+    showUsername();
+    ensureAdminPanel();
+    return true;
+  }
+
+  function showUsername() {
+    const el = document.getElementById('username-display');
+    const u = getCurrentUsername();
+    if (u) {
+      el.textContent = 'You: ' + u;
+      document.getElementById('trade-btn').style.cursor = 'pointer';
+      document.getElementById('trade-btn').style.opacity = '1';
+      document.getElementById('trade-btn').disabled = false;
+    } else {
+      el.textContent = 'Enter a username before trading';
+      document.getElementById('trade-btn').style.cursor = 'not-allowed';
+      document.getElementById('trade-btn').style.opacity = '0.6';
+      document.getElementById('trade-btn').disabled = true;
+    }
+  }
+
+  function ensureAdminPanel() {
+    const u = getCurrentUsername();
+    const adminPanel = document.getElementById('admin-panel');
+    if (u === 'mangwar' || u === 'mangwar67') {
+      adminPanel.style.display = 'block';
+    } else {
+      adminPanel.style.display = 'none';
+    }
+  }
+
   function pull(count) {
+    const u = getCurrentUsername();
+    if (!u) {
+      // require username/tutorial
+      document.getElementById('tutorial-modal').classList.add('active');
+      return;
+    }
+
     totalPulls += count;
     currentPull = [];
-    
+
     for (let i = 0; i < count; i++) {
       const item = getRandomItem();
       currentPull.push(item);
       pullHistory.push(item);
       updateBestRarity(item);
-      
+
       // Mark as collected
       const itemIndex = items.findIndex(it => it.emoji === item.emoji && it.rarity === item.rarity);
       if (itemIndex !== -1) {
         collectedAuras.add(itemIndex);
+        addItemToUser(u, itemIndex, 1); // add to user's inventory with cap
       }
     }
-    
+
     displayPull(currentPull);
     updateStats();
     saveProgress();
-    
+
     // Show reroll button
     document.getElementById('pull-1').style.display = 'none';
     document.getElementById('reroll-btn').style.display = 'inline-block';
@@ -397,15 +581,15 @@
 
   function reroll() {
     if (rerollCooldown) return;
-    
+
     rerollCooldown = true;
     const btn = document.getElementById('reroll-btn');
     btn.disabled = true;
     btn.style.opacity = '0.5';
-    
+
     let timeLeft = 1.5;
     btn.textContent = `Reroll (${timeLeft.toFixed(1)}s)`;
-    
+
     const interval = setInterval(() => {
       timeLeft -= 0.1;
       if (timeLeft <= 0) {
@@ -418,8 +602,8 @@
         btn.textContent = `Reroll (${timeLeft.toFixed(1)}s)`;
       }
     }, 100);
-    
-    pull(currentPull.length);
+
+    pull(currentPull.length || 1);
   }
 
   function backToPull() {
@@ -427,26 +611,125 @@
     document.getElementById('reroll-btn').style.display = 'none';
   }
 
+  // Trade modal handling
+  function openTradeModal() { document.getElementById('trade-modal').classList.add('active'); populateUserSearch(); }
+  function closeTradeModal() { document.getElementById('trade-modal').classList.remove('active'); }
+
+  function populateUserSearch(filter = '') {
+    const results = document.getElementById('user-search-results');
+    results.innerHTML = '';
+    const users = loadUsers();
+    const current = getCurrentUsername();
+    users.filter(u => u !== current && u.toLowerCase().includes(filter.toLowerCase())).forEach(u => {
+      const row = document.createElement('div');
+      row.style.padding = '8px'; row.style.borderBottom = '1px solid rgba(102,0,204,0.2)'; row.style.cursor = 'pointer';
+      row.textContent = u;
+      row.addEventListener('click', () => {
+        alert('Start trade with ' + u + ' (UI placeholder)');
+      });
+      results.appendChild(row);
+    });
+  }
+
+  document.getElementById('trade-btn').addEventListener('click', () => {
+    if (!getCurrentUsername()) { alert('Enter a username before trading'); document.getElementById('tutorial-modal').classList.add('active'); return; }
+    openTradeModal();
+  });
+  document.getElementById('close-trade-modal').addEventListener('click', closeTradeModal);
+  document.getElementById('trade-search').addEventListener('input', (e) => populateUserSearch(e.target.value));
+
+  // Tutorial
+  document.getElementById('tutorial-submit').addEventListener('click', async () => {
+    const desired = document.getElementById('tutorial-username').value.trim();
+    const err = document.getElementById('tutorial-error'); err.textContent = '';
+    if (!desired) { err.textContent = 'Please enter a username.'; return; }
+    const users = loadUsers();
+    if (users.includes(desired)) { err.textContent = 'Username is already taken.'; return; }
+    // If backend available, try to create on server
+    if (USE_BACKEND) {
+      try {
+        const resp = await fetch(API_BASE + '/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: desired }) });
+        if (!resp.ok) {
+          const j = await resp.json().catch(()=>({}));
+          err.textContent = j.error || 'Username taken or server error.';
+          return;
+        }
+      } catch (e) { err.textContent = 'Server error.'; return; }
+    }
+    // set username permanently (local fallback)
+    localStorage.setItem('rng_username', desired);
+    users.push(desired); saveUsers(users);
+    document.getElementById('tutorial-modal').classList.remove('active');
+    showUsername(); ensureAdminPanel();
+  });
+
+  // Admin commands
+  document.getElementById('admin-give-item').addEventListener('click', async () => {
+    const target = prompt('Give item to which username?'); if (!target) return;
+    const users = loadUsers(); if (!users.includes(target)) { alert('User not found.'); return; }
+    const itemName = prompt('Item name or emoji to give (exact match):'); if (!itemName) return;
+    const itemIndex = items.findIndex(it => it.name === itemName || it.emoji === itemName);
+    if (itemIndex === -1) return alert('Item not found. Provide exact name or emoji.');
+    const amount = parseInt(prompt('Amount to give (1-25):', '1'), 10) || 1;
+    if (USE_BACKEND) {
+      const admin = getCurrentUsername();
+      try {
+        const resp = await fetch(API_BASE + '/admin/give', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin, target, itemIndex, amount }) });
+        const j = await resp.json();
+        if (!resp.ok) return alert(j.error || 'admin error');
+        alert(`Gave ${j.given} of ${items[itemIndex].name} to ${target}.`);
+        // sync local inventories
+        const inv = loadInventories(); inv[target] = j.inventory; saveInventories(inv);
+        return;
+      } catch (e) { console.log(e); }
+    }
+    const given = addItemToUser(target, itemIndex, amount);
+    alert(`Gave ${given} of ${items[itemIndex].name} to ${target}.`);
+  });
+
+  document.getElementById('admin-boost').addEventListener('click', async () => {
+    const rarity = prompt('Rarity to boost (common,uncommon,rare,epic,legendary,mythic,exotic,secret,limited):');
+    if (!rarity || !rarityWeights.hasOwnProperty(rarity)) return alert('Invalid rarity');
+    const pct = parseFloat(prompt('Increase weight by percent (e.g. 10 for +10%)', '10')) || 0;
+    if (USE_BACKEND) {
+      const admin = getCurrentUsername();
+      try {
+        const resp = await fetch(API_BASE + '/admin/boost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin, rarity, pct }) });
+        const j = await resp.json(); if (!resp.ok) return alert(j.error || 'admin error');
+        rarityWeights[rarity] = j.weight;
+        alert(`${rarity} weight increased by ${pct}%`);
+        return;
+      } catch (e) { console.log(e); }
+    }
+    rarityWeights[rarity] = Math.max(0, rarityWeights[rarity] * (1 + pct/100));
+    alert(`${rarity} weight increased by ${pct}%`);
+  });
+
+  // Init
   document.getElementById('pull-1').addEventListener('click', () => pull(1));
   document.getElementById('reroll-btn').addEventListener('click', reroll);
   document.getElementById('view-collection-btn').addEventListener('click', openCollectionModal);
   document.getElementById('close-modal').addEventListener('click', closeCollectionModal);
-  
-  // Close modal when clicking outside
-  document.getElementById('collection-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'collection-modal') closeCollectionModal();
-  });
+  document.getElementById('collection-modal').addEventListener('click', (e) => { if (e.target.id === 'collection-modal') closeCollectionModal(); });
 
-  loadProgress();
-  updateStats();
-  updateCollectionModal();
+  // On page load
+  loadUsers(); loadProgress(); showUsername(); ensureAdminPanel(); updateStats(); updateCollectionModal();
+  // try to init backend; if available we'll use it
+  initBackend();
+  if (!getCurrentUsername()) {
+    document.getElementById('tutorial-modal').classList.add('active');
+  }
+
+  // Prevent copying of taken usernames from the page
+  document.addEventListener('copy', (e) => {
+    const sel = (window.getSelection && window.getSelection().toString()) || '';
+    if (!sel) return;
+    const users = loadUsers();
+    if (users.includes(sel.trim())) {
+      e.preventDefault();
+      alert('Copying taken usernames is not allowed.');
+    }
+  });
   </script>
 </body>
 </html>
-
-</head>
-<body>
-  <style>
-  .side-text { color:#fff; font-size:24px; font-weight:bold; max-width:200px; text-align:left; } 
-  </style>
-  <div class="side-text">Scrumptious studios</div>
