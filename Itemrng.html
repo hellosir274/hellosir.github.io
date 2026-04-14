@@ -452,8 +452,6 @@
   function loadUsers() {
     const raw = localStorage.getItem('rng_users');
     let arr = raw ? JSON.parse(raw) : [];
-    // ensure admin users exist locally
-    ['mangwar','mangwar67'].forEach(a => { if (!arr.includes(a)) arr.push(a); });
     localStorage.setItem('rng_users', JSON.stringify(arr));
     return arr;
   }
@@ -524,6 +522,19 @@
     const u = getCurrentUsername();
     if (u) {
       el.textContent = 'You: ' + u;
+      // add small change link
+      let ch = document.getElementById('change-username-btn');
+      if (!ch) {
+        ch = document.createElement('button');
+        ch.id = 'change-username-btn';
+        ch.textContent = 'Change';
+        ch.style.marginLeft = '8px';
+        ch.style.padding = '4px 8px';
+        ch.style.fontSize = '12px';
+        ch.style.cursor = 'pointer';
+        ch.addEventListener('click', attemptChangeUsername);
+        el.appendChild(ch);
+      }
       document.getElementById('trade-btn').style.cursor = 'pointer';
       document.getElementById('trade-btn').style.opacity = '1';
       document.getElementById('trade-btn').disabled = false;
@@ -533,6 +544,53 @@
       document.getElementById('trade-btn').style.opacity = '0.6';
       document.getElementById('trade-btn').disabled = true;
     }
+  }
+
+  function canChangeLocal() {
+    const last = parseInt(localStorage.getItem('rng_username_changed_at') || '0', 10);
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    return (Date.now() - last) >= SEVEN_DAYS;
+  }
+
+  async function attemptChangeUsername() {
+    const old = getCurrentUsername();
+    if (!old) return alert('No username set');
+    const newName = prompt('Enter new username (will be permanent unless changed later):');
+    if (!newName) return;
+    const users = loadUsers();
+    if (users.includes(newName)) return alert('Username already taken');
+
+    // server attempt
+    if (USE_BACKEND) {
+      try {
+        const resp = await fetch(API_BASE + '/users/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldUsername: old, newUsername: newName }) });
+        const j = await resp.json();
+        if (!resp.ok) return alert(j.error || 'Server rejected change');
+        // update local state
+        localStorage.setItem('rng_username', newName);
+        // mark change timestamp
+        localStorage.setItem('rng_username_changed_at', String(Date.now()));
+        // sync users
+        const updated = loadUsers().filter(u => u !== old); updated.push(newName); saveUsers(updated);
+        showUsername();
+        alert('Username changed to ' + newName);
+        return;
+      } catch (e) { console.log(e); alert('Server error changing username'); }
+    }
+
+    // Local fallback: check weekly limit
+    if (!canChangeLocal()) {
+      const last = parseInt(localStorage.getItem('rng_username_changed_at') || '0', 10);
+      const wait = Math.ceil((7*24*60*60*1000 - (Date.now()-last)) / (1000*60*60));
+      return alert(`You can change username in ~${wait} hours`);
+    }
+
+    // perform local change
+    localStorage.setItem('rng_username', newName);
+    localStorage.setItem('rng_username_changed_at', String(Date.now()));
+    const updated = loadUsers().filter(u => u !== old); updated.push(newName); saveUsers(updated);
+    showUsername();
+    alert('Username changed locally to ' + newName);
   }
 
   function ensureAdminPanel() {
