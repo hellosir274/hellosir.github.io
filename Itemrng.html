@@ -512,6 +512,8 @@
     if (users.includes(name)) return false;
     users.push(name); saveUsers(users);
     localStorage.setItem('rng_username', name);
+    // record the time of initial username creation so subsequent changes are rate-limited
+    localStorage.setItem('rng_username_changed_at', String(Date.now()));
     showUsername();
     ensureAdminPanel();
     return true;
@@ -521,8 +523,18 @@
     const el = document.getElementById('username-display');
     const u = getCurrentUsername();
     if (u) {
-      el.textContent = 'You: ' + u;
-      // add small change link
+      // show username and cooldown info
+      el.innerHTML = '';
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = 'You: ' + u;
+      el.appendChild(nameSpan);
+
+      // compute cooldown
+      const last = parseInt(localStorage.getItem('rng_username_changed_at') || '0', 10);
+      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+      const allowedNow = (Date.now() - last) >= SEVEN_DAYS;
+
+      // add small change link/button
       let ch = document.getElementById('change-username-btn');
       if (!ch) {
         ch = document.createElement('button');
@@ -534,6 +546,20 @@
         ch.style.cursor = 'pointer';
         ch.addEventListener('click', attemptChangeUsername);
         el.appendChild(ch);
+      }
+      ch.disabled = !allowedNow;
+      ch.style.opacity = allowedNow ? '1' : '0.6';
+      ch.title = allowedNow ? 'Change your username' : 'You can change your username once every 7 days';
+
+      // show next allowed change time when still in cooldown
+      if (!allowedNow && last > 0) {
+        const when = new Date(last + SEVEN_DAYS);
+        const info = document.createElement('div');
+        info.style.fontSize = '12px';
+        info.style.color = '#ccc';
+        info.style.marginTop = '6px';
+        info.textContent = 'Change allowed: ' + when.toLocaleString();
+        el.appendChild(info);
       }
       document.getElementById('trade-btn').style.cursor = 'pointer';
       document.getElementById('trade-btn').style.opacity = '1';
@@ -716,6 +742,8 @@
     }
     // set username permanently (local fallback)
     localStorage.setItem('rng_username', desired);
+    // record the time of initial username creation so name-change is rate-limited
+    localStorage.setItem('rng_username_changed_at', String(Date.now()));
     users.push(desired); saveUsers(users);
     document.getElementById('tutorial-modal').classList.remove('active');
     showUsername(); ensureAdminPanel();
