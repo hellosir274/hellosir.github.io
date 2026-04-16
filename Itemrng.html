@@ -190,7 +190,7 @@
   </div>
 
   <!-- Admin panel placeholder (visible to admins) -->
-  <div id="admin-panel" style="position:fixed; left:12px; bottom:60px; z-index:2000; display:none;">
+  <div id="admin-panel" style="position:fixed; left:12px; bottom:90px; z-index:2000; display:none;">
     <div style="background:rgba(0,0,0,0.6); border:1px solid #6600cc; padding:8px; border-radius:8px; color:#fff;">
       <div style="font-weight:bold; margin-bottom:6px;">Admin Commands</div>
       <button class="collection-btn" id="admin-give-item" style="padding:8px 12px; font-size:14px;">Give Item</button>
@@ -639,7 +639,7 @@
   function ensureAdminPanel() {
     const u = getCurrentUsername();
     const adminPanel = document.getElementById('admin-panel');
-    if (u === 'mangwar' || u === 'mangwar67') {
+    if (u === 'billyman' || u === 'billyman67') {
       adminPanel.style.display = 'block';
     } else {
       adminPanel.style.display = 'none';
